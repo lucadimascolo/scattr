@@ -5,33 +5,40 @@ import numpyro
 import numpyro.distributions as dist
 
 class data:
-  def __init__(self,dist,golog):
+  def __init__(self,dist,golog=False):
     self.dist = dist
     self.golog = golog
 
-class sampler:
-  def __init__(self,x,y):
-    self.x = x
-    self.y = y
+class sample:
+  def __init__(self,x,y,m,c,nsample=1000,nwarmup=1000):
+    xget = lambda d: jp.log10(d) if x.golog else d
 
-  def fit(self,a,b,nsample=1000,nwarmup=1000):
-    xget = lambda x: jp.log10(x) if self.x.golog else x
+    xmin = xget(x.dist.loc.min())-10*xget(x.dist.scale[jp.argmin(x.dist.loc)])
+    xmax = xget(x.dist.loc.max())+10*xget(x.dist.scale[jp.argmax(x.dist.loc)])    
 
-    xmin = xget(self.x.dist.loc.min())-10*xget(self.x.dist.scale[jp.argmin(self.x.dist.loc)])
-    xmax = xget(self.x.dist.loc.max())+10*xget(self.x.dist.scale[jp.argmin(self.x.dist.loc)])    
+    if x.golog:
+      xmin = jp.log10(x.dist.loc.min())-(jp.log10(x.dist.loc.max())-jp.log10(x.dist.loc.min()))
+      xmax = jp.log10(x.dist.loc.max())+(jp.log10(x.dist.loc.max())-jp.log10(x.dist.loc.min()))
+    else:
+      xmin = x.dist.loc.min()-10*x.dist.scale[jp.argmin(x.dist.loc)]
+      xmax = x.dist.loc.max()+10*x.dist.scale[jp.argmax(x.dist.loc)] 
+
+    print(xmin,xmax,jp.log10(x.dist.loc.min()),jp.log10(x.dist.loc.max()))
+    xnum = x.dist.loc.size
 
     def model():
-      aini = numpyro.sample('a',a)
-      bini = numpyro.sample('b',b)
+      mini = numpyro.sample('m',m)
+      cini = numpyro.sample('c',c)
 
-      xini = numpyro.sample('x',dist.Uniform(low=xmin,high=xmax))
-      yini = numpyro.deterministic('y',xini*aini+bini)
+      with numpyro.plate('data',xnum):
+        xini = numpyro.sample('x',dist.Uniform(low=xmin,high=xmax))
+        yini = numpyro.deterministic('y',xini*mini+cini)
 
-      xout = 10**xini if self.x.golog else xini
-      yout = 10**yini if self.y.golog else yini
+        xout = 10**xini if x.golog else xini
+        yout = 10**yini if y.golog else yini
 
-      numpyro.sample('xobs',self.x.dist,obs=xout)
-      numpyro.sample('yobs',self.y.dist,obs=yout)
+        numpyro.sample('xobs',x.dist,obs=xout)
+        numpyro.sample('yobs',y.dist,obs=yout)
     
     rkey = jax.random.PRNGKey(0) 
     rkey, seed = jax.random.split(rkey)
@@ -40,4 +47,7 @@ class sampler:
     self.mcmc = numpyro.infer.MCMC(self.kern,num_warmup=nwarmup,num_samples=nsample)
     self.mcmc.run(seed)
 
+    self.mcmc.print_summary()
+
     self.samples = self.mcmc.get_samples()
+
