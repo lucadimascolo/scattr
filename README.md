@@ -2,7 +2,11 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10528327.svg)](https://doi.org/10.5281/zenodo.10528327)
 
-Yet another linear regression library
+Yet another linear regression library.
+
+`scattr' is a plug-n-play tool for performing linear regression in the presence of intrinsic scatter and for measurements with uncertainties on both the dependent and independent variables.
+
+This is based on other publicly available tools (specifically, [linmix](https://linmix.readthedocs.io/en/latest/src/linmix.html) and [LIRA](https://cran.r-project.org/web/packages/lira/index.html)), but provides a more statistically consistent approach for dealing with observational uncertainties. More details will be provided asap.
 
 ## Installation
 
