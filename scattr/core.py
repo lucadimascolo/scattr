@@ -3,42 +3,69 @@ import jax.numpy as jp
 
 import numpyro
 import numpyro.distributions as dist
+from numpyro.distributions.transforms import OrderedTransform
 
+# Build data structure
+# --------------------------------------------------------------------------------
 class data:
-  def __init__(self,dist,golog=False):
-    self.dist = dist
-    self.golog = golog
+  def __init__(self,loc,scale,uselog=False,scatter=False):
+    self.dist   = dist.Normal(loc=loc,scale=scale)
+  
+    self.uselog  = uselog
+    self.scatter = scatter
 
-class sample:
-  def __init__(self,x,y,m,c,nsample=1000,nwarmup=1000):
-    xget = lambda d: jp.log10(d) if x.golog else d
+    self.pivot   = 10**jp.median(jp.log10(self.dist.loc)) if uselog else jp.median(self.dist.loc)
 
-    xmin = xget(x.dist.loc.min())-10*xget(x.dist.scale[jp.argmin(x.dist.loc)])
-    xmax = xget(x.dist.loc.max())+10*xget(x.dist.scale[jp.argmax(x.dist.loc)])    
+    self.size   = self.dist.loc.size
 
-    if x.golog:
-      xmin = jp.log10(x.dist.loc.min())-(jp.log10(x.dist.loc.max())-jp.log10(x.dist.loc.min()))
-      xmax = jp.log10(x.dist.loc.max())+(jp.log10(x.dist.loc.max())-jp.log10(x.dist.loc.min()))
+    if self.uselog:
+      self.min = jp.log10(self.dist.loc.min())-(jp.log10(self.dist.loc.max())-jp.log10(self.dist.loc.min()))
+      self.max = jp.log10(self.dist.loc.max())+(jp.log10(self.dist.loc.max())-jp.log10(self.dist.loc.min()))
     else:
-      xmin = x.dist.loc.min()-10*x.dist.scale[jp.argmin(x.dist.loc)]
-      xmax = x.dist.loc.max()+10*x.dist.scale[jp.argmax(x.dist.loc)] 
+      self.min = self.dist.loc.min()-10*self.dist.scale[jp.argmin(self.dist.loc)]
+      self.max = self.dist.loc.max()+10*self.dist.scale[jp.argmax(self.dist.loc)] 
 
-    print(xmin,xmax,jp.log10(x.dist.loc.min()),jp.log10(x.dist.loc.max()))
-    xnum = x.dist.loc.size
+# --------------------------------------------------------------------------------
+class sample:
+  def __init__(self,x,y,m,c,nsample=1000,nwarmup=1000,**kwargs):
+
+    nk = kwargs.get('nk',1)
 
     def model():
-      mini = numpyro.sample('m',m)
-      cini = numpyro.sample('c',c)
+      mi = numpyro.sample('m',m)
+      ci = numpyro.sample('c',c)
 
-      with numpyro.plate('data',xnum):
-        xini = numpyro.sample('x',dist.Uniform(low=xmin,high=xmax))
-        yini = numpyro.deterministic('y',xini*mini+cini)
+      ws = numpyro.sample('ws',dist.Uniform(low=0.00E+00,high=1.00E+10))
+      ms = numpyro.sample('ms',dist.Uniform(low=x.min,high=x.max))
+      us = numpyro.sample('us',dist.InverseGamma(concentration=5.00E-01,rate=5.00E-01*ws))
 
-        xout = 10**xini if x.golog else xini
-        yout = 10**yini if y.golog else yini
+      with numpyro.plate('mode',nk):
+        tk = numpyro.sample('tk',dist.InverseGamma(concentration=5.00E-01,rate=5.00E-01*ws))
+        mk = numpyro.sample('mk',dist.TransformedDistribution(dist.Normal(loc=ms,scale=jp.sqrt(us)).expand([nk]),OrderedTransform()))
 
-        numpyro.sample('xobs',x.dist,obs=xout)
-        numpyro.sample('yobs',y.dist,obs=yout)
+      if nk>1: pk = numpyro.sample('pk',dist.Dirichlet(jp.ones(nk)))
+
+      sx = numpyro.sample('sx',dist.Uniform(low=0.00,high=1.00E+10)) if x.scatter else 0.00
+      sy = numpyro.sample('sy',dist.Uniform(low=0.00,high=1.00E+10)) if y.scatter else 0.00
+
+      with numpyro.plate('data',x.size):
+        zk = numpyro.sample('zk',dist.Categorical(probs=pk)) if nk>1 else 0
+        xk = numpyro.sample('xk',dist.Normal(loc=mk[zk],scale=jp.sqrt(tk[zk])))
+
+        xi = numpyro.deterministic('xi',(xk-jp.log10(x.pivot) if x.uselog else xk/x.pivot))
+        yi = numpyro.deterministic('yi',xi*mi+ci)
+
+        yk = yi+jp.log10(y.pivot) if y.uselog else yi*y.pivot
+        
+        xs = numpyro.sample('xs',dist.Normal(loc=xk,scale=sx)) if x.scatter else xk
+      # ys = numpyro.sample('ys',dist.Normal(loc=yk,scale=sy)) if y.scatter else yk
+        ys = numpyro.sample('ys',dist.Normal(loc=yk,scale=jp.sqrt(sy**2+(mi*sx)**2))) if y.scatter else yk
+
+        xobs = 10**xs if x.uselog else xs
+        yobs = 10**ys if y.uselog else ys
+
+        numpyro.sample('xobs',x.dist,obs=xobs)
+        numpyro.sample('yobs',y.dist,obs=yobs)
     
     rkey = jax.random.PRNGKey(0) 
     rkey, seed = jax.random.split(rkey)
@@ -46,6 +73,9 @@ class sample:
     self.kern = numpyro.infer.NUTS(model)
     self.mcmc = numpyro.infer.MCMC(self.kern,num_warmup=nwarmup,num_samples=nsample)
     self.mcmc.run(seed)
+
+    for var in ['xk','xs','ys']:
+      self.mcmc._states['z'].pop(var,None)
 
     self.mcmc.print_summary()
 

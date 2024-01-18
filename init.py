@@ -13,23 +13,23 @@ data = data[data[:,3]!=0,:]
 xc = data[:,0]; xs = data[:,1]
 yc = data[:,2]; ys = data[:,3]
 
-x = scattr.data(dist=scattr.dist.Normal(loc=xc,scale=xs),golog=True)
-y = scattr.data(dist=scattr.dist.Normal(loc=yc,scale=ys),golog=True)
+x = scattr.data(loc=xc,scale=xs,uselog=True,scatter=False)
+y = scattr.data(loc=yc,scale=ys,uselog=True,scatter=True)
 
 m = scattr.dist.Uniform(low= 0.00E+00,high=1.00E+02)
-c = scattr.dist.Uniform(low=-10.00E+00,high=10.00E+00)
+c = scattr.dist.Uniform(low=-1.00E+01,high=1.00E+01)
 
 res = scattr.sample(x,y,m,c,nwarmup=5000,nsample=5000)
 
-# ----
+# --------------------------------------------------------------------------------
 
 corner.corner(np.vstack([res.samples['m'],res.samples['c']]).T,labels=['m','c'])
 plt.show(); plt.close()
 
-# ----
+# --------------------------------------------------------------------------------
 
 xline = np.linspace(0.1,200,100)
-yline = 10**(np.log10(xline[:,None])*res.samples['m'][None,:]+res.samples['c'][None,:])
+yline = 10**(np.log10(xline[:,None]/x.pivot)*res.samples['m'][None,:]+res.samples['c'][None,:]+np.log10(y.pivot))
 yline = np.array([np.quantile(yi,[0.16,0.50,0.84]) for yi in yline]).T
 
 plt.plot(xline,yline[1])
