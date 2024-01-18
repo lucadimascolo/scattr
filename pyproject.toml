@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["scattr*"]
+exclude = ["test*"]
+
+[project]
+name = "scattr"
+version = "0.1.0"
+authors = [{ name="Luca Di Mascolo", email="lucadimascolo@gmail.com" }]
+description = "Yet another linear regression library"
+readme = "README.md"
+requires-python = ">=3.7"
+license = { text = "MIT License" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 4 - Beta",
+    "Operating System :: OS Independent",
+]
+dependencies = ["jax","jaxlib","numpyro"]
+
+[project.urls]
+"Homepage" = "https://github.com/lucadimascolo/scattr"
+"Bug Tracker" = "https://github.com/lucadimascolo/scattr/issues"
