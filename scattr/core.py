@@ -6,6 +6,8 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.distributions.transforms import OrderedTransform
 
+import arviz
+
 # from numpyro.contrib.nested_sampling import NestedSampler
 
 # Sawicki upper limits
@@ -109,9 +111,11 @@ class sample:
         xobs = 10**xs if x.uselog else xs
         yobs = 10**ys if y.uselog else ys
 
-        numpyro.sample('xobs',x.dist,obs=xobs)
-        numpyro.sample('yobs',y.dist,obs=yobs)
-    
+      # numpyro.sample('xobs',x.dist,obs=xobs)
+      # numpyro.sample('yobs',y.dist,obs=yobs)
+
+        numpyro.factor('obs',x.dist.log_prob(xobs)+y.dist.log_prob(yobs))
+
     rkey = jax.random.PRNGKey(0) 
     rkey, seed = jax.random.split(rkey)
 
@@ -122,11 +126,17 @@ class sample:
       raise NotImplementedError
  
     self.samp.run(seed)
+    
+    self.az   = arviz.from_numpyro(self.samp)
+    self.loo  = arviz.loo(self.az)
+    self.waic = arviz.waic(self.az)
 
     for var in ['xk','xs','ys']:
       self.samp._states['z'].pop(var,None)
 
     self.samp.print_summary()
 
-    self.samples = self.samp.get_samples()
+    print(self.loo)
+    print(self.waic)
 
+    self.samples = self.samp.get_samples()
