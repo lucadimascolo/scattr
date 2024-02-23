@@ -11,7 +11,7 @@ exclude = ["test*"]
 
 [project]
 name = "scattr"
-version = "0.1.0"
+version = "0.1.1"
 authors = [{ name="Luca Di Mascolo", email="lucadimascolo@gmail.com" }]
 description = "Yet another linear regression library"
 readme = "README.md"
@@ -23,7 +23,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Operating System :: OS Independent",
 ]
-dependencies = ["jax","jaxlib","numpyro"]
+dependencies = ["jax","jaxlib","jaxns","numpyro","pytest"]
 
 [project.urls]
 "Homepage" = "https://github.com/lucadimascolo/scattr"

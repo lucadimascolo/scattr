@@ -17,6 +17,13 @@ python -m pip install git+https://github.com/lucadimascolo/scattr.git
 
 This will  download and install the latest version of `scattr` as well as all the required dependencies.
 
+Currently, there is a minor issue with the latest pip-installable version of `numpyro`, as its nested sampler depends on an older version of `jaxnk`. If you are planning to run a nested sampling, I suggest to install the latest dev-release of numpyro as 
+
+```
+python -m pip install git+https://github.com/pyro-ppl/numpyro.git
+```
+
+
 ## Usage
 
 A preliminary example can be found in `init.py`.

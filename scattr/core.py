@@ -1,39 +1,87 @@
 import jax; jax.config.update('jax_enable_x64', True)
 import jax.numpy as jp
+import jax.scipy
 
 import numpyro
 import numpyro.distributions as dist
 from numpyro.distributions.transforms import OrderedTransform
 
+from numpyro.contrib.nested_sampling import NestedSampler
+
+# Sawicki upper limits
+# --------------------------------------------------------------------------------
+def sawicki(value,loc,scale):
+  prob2 = (value-loc)/jp.sqrt(2.00*scale**2)
+  prob2 = jp.log(jp.sqrt(0.50*jp.pi*scale**2)*(1.00+jax.scipy.special.erf(prob2)))
+  return prob2-0.50*jp.log(2.00*jp.pi*scale**2)
+  
+# Mixed distribution
+# --------------------------------------------------------------------------------
+class NormalUpper(dist.Distribution):
+    support = dist.constraints.real_vector
+
+    def __init__(self,loc,scale,isupp):
+      self.loc, self.scale, self.isupp = loc, scale, isupp
+      super().__init__(batch_shape=jp.shape(self.loc), event_shape=())
+
+    def sample(self, key, sample_shape=()):
+      raise NotImplementedError
+
+    def log_prob(self, value):      
+      prob1 = jax.scipy.stats.norm.logpdf(x = value.at[self.isupp==False].get(),
+                                        loc = self.loc.at[self.isupp==False].get(),
+                                      scale = self.scale.at[self.isupp==False].get())
+            
+      prob2 = sawicki(value = value.at[self.isupp==True].get(),
+                        loc = self.loc.at[self.isupp==True].get(),
+                      scale = self.loc.at[self.isupp==True].get())
+
+      logprob = jp.zeros(value.shape)
+      logprob = logprob.at[self.isupp==False].set(prob1)
+      logprob = logprob.at[self.isupp==True].set(prob2)
+      
+      return logprob
+
+
 # Build data structure
 # --------------------------------------------------------------------------------
 class data:
-  def __init__(self,loc,scale,uselog=False,scatter=False):
-    self.dist   = dist.Normal(loc=loc,scale=scale)
-  
+  def __init__(self,loc,scale,uselog=False,scatter=False,isupp=None):
+    if isupp is None:
+      isupp = jp.zeros(loc.shape,dtype=bool)
+
+    if jp.any(isupp):
+      self.dist    = NormalUpper(loc=loc,scale=scale,isupp=isupp)
+    else:
+      self.dist   = dist.Normal(loc=loc.at[isupp==False].get(),
+                            scale=scale.at[isupp==False].get())
+
+    print(self.dist.batch_shape,self.dist.event_shape)
     self.uselog  = uselog
     self.scatter = scatter
 
-    self.pivot   = 10**jp.median(jp.log10(self.dist.loc)) if uselog else jp.median(self.dist.loc)
+    self.obs     = loc.at[isupp==False].get()
 
-    self.size   = self.dist.loc.size
+    self.pivot   = 10**jp.median(jp.log10(self.obs)) if uselog else jp.median(self.obs)
+
+    self.size    = loc.shape[0]
 
     if self.uselog:
-      self.min = jp.log10(self.dist.loc.min())-(jp.log10(self.dist.loc.max())-jp.log10(self.dist.loc.min()))
-      self.max = jp.log10(self.dist.loc.max())+(jp.log10(self.dist.loc.max())-jp.log10(self.dist.loc.min()))
+      self.min = jp.log10(self.obs.min())-(jp.log10(self.obs.max())-jp.log10(self.obs.min()))
+      self.max = jp.log10(self.obs.max())+(jp.log10(self.obs.max())-jp.log10(self.obs.min()))
     else:
-      self.min = self.dist.loc.min()-10*self.dist.scale[jp.argmin(self.dist.loc)]
-      self.max = self.dist.loc.max()+10*self.dist.scale[jp.argmax(self.dist.loc)] 
+      self.min = self.obs.min()-10*self.dist.scale[jp.argmin(self.obs)]
+      self.max = self.obs.max()+10*self.dist.scale[jp.argmax(self.obs)] 
 
 # --------------------------------------------------------------------------------
 class sample:
-  def __init__(self,x,y,m,c,nsample=1000,nwarmup=1000,**kwargs):
+  def __init__(self,x,y,m,c,nsample=1000,nwarmup=1000,sampler='nuts',**kwargs):
 
     nk = kwargs.get('nk',1)
 
     def model():
-      mi = numpyro.sample('m',m)
-      ci = numpyro.sample('c',c)
+      mi = numpyro.sample('m',m) if hasattr(m,'log_prob') else m
+      ci = numpyro.sample('c',c) if hasattr(c,'log_prob') else c
 
       ws = numpyro.sample('ws',dist.Uniform(low=0.00E+00,high=1.00E+10))
       ms = numpyro.sample('ms',dist.Uniform(low=x.min,high=x.max))
@@ -58,7 +106,6 @@ class sample:
         yk = yi+jp.log10(y.pivot) if y.uselog else yi*y.pivot
         
         xs = numpyro.sample('xs',dist.Normal(loc=xk,scale=sx)) if x.scatter else xk
-      # ys = numpyro.sample('ys',dist.Normal(loc=yk,scale=sy)) if y.scatter else yk
         ys = numpyro.sample('ys',dist.Normal(loc=yk,scale=jp.sqrt(sy**2+(mi*sx)**2))) if y.scatter else yk
 
         xobs = 10**xs if x.uselog else xs
@@ -70,14 +117,19 @@ class sample:
     rkey = jax.random.PRNGKey(0) 
     rkey, seed = jax.random.split(rkey)
 
-    self.kern = numpyro.infer.NUTS(model)
-    self.mcmc = numpyro.infer.MCMC(self.kern,num_warmup=nwarmup,num_samples=nsample)
-    self.mcmc.run(seed)
+    if sampler=='nuts':
+      self.kern = numpyro.infer.NUTS(model)
+      self.samp = numpyro.infer.MCMC(self.kern,num_warmup=nwarmup,num_samples=nsample)
+    elif sampler=='nested':
+      raise NotImplementedError
+    # self.samp = NestedSampler(model)
+
+    self.samp.run(seed)
 
     for var in ['xk','xs','ys']:
-      self.mcmc._states['z'].pop(var,None)
+      self.samp._states['z'].pop(var,None)
 
-    self.mcmc.print_summary()
+    self.samp.print_summary()
 
-    self.samples = self.mcmc.get_samples()
+    self.samples = self.samp.get_samples()
 
