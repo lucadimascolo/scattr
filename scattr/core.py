@@ -6,7 +6,7 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.distributions.transforms import OrderedTransform
 
-from numpyro.contrib.nested_sampling import NestedSampler
+# from numpyro.contrib.nested_sampling import NestedSampler
 
 # Sawicki upper limits
 # --------------------------------------------------------------------------------
@@ -39,7 +39,6 @@ class NormalUpper(dist.Distribution):
       logprob = jp.zeros(value.shape)
       logprob = logprob.at[self.isupp==False].set(prob1)
       logprob = logprob.at[self.isupp==True].set(prob2)
-      
       return logprob
 
 
@@ -56,7 +55,6 @@ class data:
       self.dist   = dist.Normal(loc=loc.at[isupp==False].get(),
                             scale=scale.at[isupp==False].get())
 
-    print(self.dist.batch_shape,self.dist.event_shape)
     self.uselog  = uselog
     self.scatter = scatter
 
@@ -122,8 +120,7 @@ class sample:
       self.samp = numpyro.infer.MCMC(self.kern,num_warmup=nwarmup,num_samples=nsample)
     elif sampler=='nested':
       raise NotImplementedError
-    # self.samp = NestedSampler(model)
-
+ 
     self.samp.run(seed)
 
     for var in ['xk','xs','ys']:
