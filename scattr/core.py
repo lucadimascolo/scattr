@@ -7,15 +7,18 @@ import numpyro.distributions as dist
 from numpyro.distributions.transforms import OrderedTransform
 
 import arviz
+import sys
 
 # from numpyro.contrib.nested_sampling import NestedSampler
 
 # Sawicki upper limits
 # --------------------------------------------------------------------------------
 def sawicki(value,loc,scale):
-  prob2 = (value-loc)/jp.sqrt(2.00*scale**2)
-  prob2 = jp.log(jp.sqrt(0.50*jp.pi*scale**2)*(1.00+jax.scipy.special.erf(prob2)))
-  return prob2-0.50*jp.log(2.00*jp.pi*scale**2)
+  perf = (loc-value)/jp.sqrt(2.00*scale**2)
+  perf = jax.scipy.special.erf(perf)
+  prob = jp.log(jp.sqrt(0.50*jp.pi*scale**2)*(1.00+perf))
+  prob -= 0.50*jp.log(2.00*jp.pi*scale**2)
+  return jp.where(perf==-1,-sys.float_info.max,prob)
   
 # Mixed distribution
 # --------------------------------------------------------------------------------
@@ -52,10 +55,10 @@ class data:
       isupp = jp.zeros(loc.shape,dtype=bool)
 
     if jp.any(isupp):
-      self.dist    = NormalUpper(loc=loc,scale=scale,isupp=isupp)
+      self.dist  = NormalUpper(loc=loc,scale=scale,isupp=isupp)
     else:
-      self.dist   = dist.Normal(loc=loc.at[isupp==False].get(),
-                            scale=scale.at[isupp==False].get())
+      self.dist  = dist.Normal(loc=loc.at[isupp==False].get(),
+                           scale=scale.at[isupp==False].get())
 
     self.uselog  = uselog
     self.scatter = scatter
@@ -110,9 +113,6 @@ class sample:
 
         xobs = 10**xs if x.uselog else xs
         yobs = 10**ys if y.uselog else ys
-
-      # numpyro.sample('xobs',x.dist,obs=xobs)
-      # numpyro.sample('yobs',y.dist,obs=yobs)
 
         numpyro.factor('obs',x.dist.log_prob(xobs)+y.dist.log_prob(yobs))
 
