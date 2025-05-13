@@ -11,7 +11,7 @@ exclude = ["test*"]
 
 [project]
 name = "scattr"
-version = "0.1.1"
+version = "0.1.2"
 authors = [{ name="Luca Di Mascolo", email="lucadimascolo@gmail.com" }]
 description = "Yet another linear regression library"
 readme = "README.md"
