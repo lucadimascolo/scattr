@@ -247,7 +247,7 @@ class sample:
     return corner.corner(np.vstack(samples).T,labels=labels,**kwargs)
 
 
-  def gen_model(self,xl=0.10,**kwargs):    
+  def gen_model(self,fig=None,xl=0.02,**kwargs):    
     nsamp = self.samples[list(self.samples.keys())[0]].shape[0]
 
     pars = {}
@@ -273,20 +273,4 @@ class sample:
 
     yline = np.array([np.quantile(yi,[0.16,0.50,0.84]) for yi in yline]).T
 
-    fig, ax = plt.subplots(**kwargs)
-
-    ax.plot(xline,yline[1],ls='--',color='black',lw=0.75)
-    ax.plot(xline,yline[0],ls=':',color='black',lw=0.75)
-    ax.plot(xline,yline[2],ls=':',color='black',lw=0.75)
-
-    xyisupp = np.logical_or(y.isupp,x.isupp)
-
-    ax.errorbar(x.loc[~xyisupp],y.loc[~xyisupp],xerr=x.scale[~xyisupp],yerr=y.scale[~xyisupp],fmt=' ',zorder=-2,ecolor='black',elinewidth=0.50)
-    ax.errorbar(x.loc[ y.isupp],y.loc[ y.isupp],xerr=x.scale[ y.isupp],yerr=y.scale[ y.isupp],fmt=' ',zorder=-2,ecolor='black',elinewidth=0.50,uplims=True)
-    ax.errorbar(x.loc[ x.isupp],y.loc[ x.isupp],xerr=x.scale[ x.isupp],yerr=y.scale[ x.isupp],fmt=' ',zorder=-2,ecolor='black',elinewidth=0.50,xuplims=True)
-
-    ax.set_xscale('log' if x.uselog else 'linear')
-    ax.set_yscale('log' if y.uselog else 'linear')
-    
-    ax.set_xlim(xline.min(),xline.max())
-    return fig, ax
+    return xline, yline
