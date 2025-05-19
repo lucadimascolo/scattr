@@ -1,6 +1,10 @@
+import matplotlib.pyplot as plt
+
 import jax; jax.config.update('jax_enable_x64', True)
 import jax.numpy as jp
 import jax.scipy
+
+import numpy as np
 
 import numpyro
 import numpyro.distributions as dist
@@ -106,7 +110,7 @@ class data:
       self.dist = NormalUpper(loc=self._loc,scale=self._scale,isupp=self._isupp)
     else:
       self.dist = dist.Normal(loc=self._loc.at[self._isupp==False].get(),
-                  scale=self._scale.at[self._isupp==False].get())
+                          scale=self._scale.at[self._isupp==False].get())
 
     self.obs = self._loc.at[self._isupp==False].get()
     self.pivot = 10**jp.median(jp.log10(self.obs)) if self._uselog else jp.median(self.obs)
@@ -157,8 +161,15 @@ class sample:
 
     self.samples = self.samp.get_samples()
 
+
   @staticmethod
-  def _sampler(x,y,m,c,nsample=1000,nwarmup=1000,nchains=1,sampler='nuts',nk=1,pinit=None):
+  def _sampler(x,y,m,c,
+               sx=dist.Uniform(low=0.00,high=1.00E+10),
+               sy=dist.Uniform(low=0.00,high=1.00E+10),
+               nsample=1000,nwarmup=1000,nchains=1,sampler='nuts',nk=1,pinit=None):
+
+    if not x.scatter: sx = 0.00
+    if not y.scatter: sy = 0.00
     
     @config_enumerate
     def model():
@@ -175,8 +186,8 @@ class sample:
 
       if nk>1: pk = numpyro.sample('pk',dist.Dirichlet(jp.ones(nk)))
 
-      sx = numpyro.sample('sx',dist.Uniform(low=0.00,high=1.00E+10)) if x.scatter else 0.00
-      sy = numpyro.sample('sy',dist.Uniform(low=0.00,high=1.00E+10)) if y.scatter else 0.00
+      sxi = numpyro.sample('sx',sx) if x.scatter and hasattr(sx,'log_prob') else sx
+      syi = numpyro.sample('sy',sy) if y.scatter and hasattr(sy,'log_prob') else sy
 
       with numpyro.plate('data',x.size):
         zk = numpyro.sample('zk',dist.Categorical(probs=pk)) if nk>1 else 0
@@ -187,8 +198,8 @@ class sample:
 
         yk = yi+jp.log10(y.pivot) if y.uselog else yi*y.pivot
         
-        xs = numpyro.sample('xs',dist.Normal(loc=xk,scale=sx)) if x.scatter else xk
-        ys = numpyro.sample('ys',dist.Normal(loc=yk,scale=jp.sqrt(sy**2+(mi*sx)**2))) if y.scatter else yk
+        xs = numpyro.sample('xs',dist.Normal(loc=xk,scale=sxi)) if x.scatter else xk
+        ys = numpyro.sample('ys',dist.Normal(loc=yk,scale=jp.sqrt(syi**2+(mi*sxi)**2))) if y.scatter else yk
 
         xobs = 10**xs if x.uselog else xs
         yobs = 10**ys if y.uselog else ys
@@ -203,7 +214,15 @@ class sample:
       samp = numpyro.infer.MCMC(kern,num_warmup=nwarmup,num_samples=nsample,num_chains=nchains)
     elif sampler=='nested':
       raise NotImplementedError
-    samp.run(seed)
+    samp.run(seed,init_params=pinit)
+
+    setattr(samp,'data',{'x': x,'y': y})
+    setattr(samp,'fixed',{})
+    for key in ['m','c']:
+      if not hasattr(eval(key),'log_prob'): samp.fixed.update({key: eval(key)})
+
+    if x.scatter and not hasattr(sx,'log_prob'): samp.fixed.update({'sx': sx})
+    if y.scatter and not hasattr(sy,'log_prob'): samp.fixed.update({'sy': sy})
 
     if nk>1:
       post = samp.get_samples()
@@ -217,6 +236,7 @@ class sample:
 
     return samp
   
+
   def corner(self,parkeys=['m','c','sx','sy'],**kwargs):
     labels, samples = [], []
     for key in parkeys:
@@ -224,7 +244,49 @@ class sample:
         samples.append(self.samples[key])
         labels.append(key)
 
-    return corner.corner(jp.vstack(samples).T,labels=labels,**kwargs)
+    return corner.corner(np.vstack(samples).T,labels=labels,**kwargs)
 
-  def gen_model(self):
-    pass
+
+  def gen_model(self,xl=0.10,**kwargs):    
+    nsamp = self.samples[list(self.samples.keys())[0]].shape[0]
+
+    pars = {}
+    for key in ['m','c','sx','sy']:
+      if key in self.samples.keys():
+        pars[key] = np.asarray(self.samples[key])
+      elif key in self.samp.fixed.keys():
+        pars[key] = np.full(nsamp,self.samp.fixed[key])
+    
+    x = self.samp.data['x']
+    y = self.samp.data['y']
+
+    if isinstance(xl,(int,float)):
+      xline = np.linspace(np.power(10,np.log10(x.loc.min()-x.scale[np.argmin(x.loc)])-xl),
+                          np.power(10,np.log10(x.loc.max()+x.scale[np.argmax(x.loc)])+xl),100)
+
+    yline = np.log10(xline) if x.uselog else xline
+    yline = (yline-np.log10(x.pivot) if x.uselog else yline/x.pivot)
+    yline = yline[:,None]*pars['m'][None,:]+pars['c'][None,:]
+
+    yline = yline+np.log10(y.pivot) if y.uselog else yline*y.pivot
+    yline = 10**yline if y.uselog else yline
+
+    yline = np.array([np.quantile(yi,[0.16,0.50,0.84]) for yi in yline]).T
+
+    fig, ax = plt.subplots(**kwargs)
+
+    ax.plot(xline,yline[1],ls='--',color='black',lw=0.75)
+    ax.plot(xline,yline[0],ls=':',color='black',lw=0.75)
+    ax.plot(xline,yline[2],ls=':',color='black',lw=0.75)
+
+    xyisupp = np.logical_or(y.isupp,x.isupp)
+
+    ax.errorbar(x.loc[~xyisupp],y.loc[~xyisupp],xerr=x.scale[~xyisupp],yerr=y.scale[~xyisupp],fmt=' ',zorder=-2,ecolor='black',elinewidth=0.50)
+    ax.errorbar(x.loc[ y.isupp],y.loc[ y.isupp],xerr=x.scale[ y.isupp],yerr=y.scale[ y.isupp],fmt=' ',zorder=-2,ecolor='black',elinewidth=0.50,uplims=True)
+    ax.errorbar(x.loc[ x.isupp],y.loc[ x.isupp],xerr=x.scale[ x.isupp],yerr=y.scale[ x.isupp],fmt=' ',zorder=-2,ecolor='black',elinewidth=0.50,xuplims=True)
+
+    ax.set_xscale('log' if x.uselog else 'linear')
+    ax.set_yscale('log' if y.uselog else 'linear')
+    
+    ax.set_xlim(xline.min(),xline.max())
+    return fig, ax
