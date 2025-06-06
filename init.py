@@ -28,9 +28,11 @@ plt.show(); plt.close()
 
 # --------------------------------------------------------------------------------
 
-xline = np.linspace(0.1,200,100)
-yline = 10**(np.log10(xline[:,None]/x.pivot)*res.samples['m'][None,:]+res.samples['c'][None,:]+np.log10(y.pivot))
-yline = np.array([np.quantile(yi,[0.16,0.50,0.84]) for yi in yline]).T
+# xline = np.linspace(0.1,200,100)
+# yline = 10**(np.log10(xline[:,None]/x.pivot)*res.samples['m'][None,:]+res.samples['c'][None,:]+np.log10(y.pivot))
+# yline = np.array([np.quantile(yi,[0.16,0.50,0.84]) for yi in yline]).T
+
+xline, yline = res.gen_model()
 
 plt.plot(xline,yline[1])
 plt.fill_between(xline,yline[0],yline[2])
