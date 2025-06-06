@@ -23,7 +23,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Operating System :: OS Independent",
 ]
-dependencies = ["jax","jaxlib","numpyro"]
+dependencies = ["jax","jaxlib","numpyro","funsor"]
 
 [project.urls]
 "Homepage" = "https://github.com/lucadimascolo/scattr"
