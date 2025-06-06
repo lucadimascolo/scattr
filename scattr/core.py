@@ -12,8 +12,13 @@ from numpyro.distributions.transforms import OrderedTransform
 from numpyro.contrib.funsor import config_enumerate
 
 import corner
-import arviz
 import sys
+
+try:
+  import arviz
+except ImportError:
+  arviz = None
+  print('arviz not found, some features will not work')
 
 # from numpyro.contrib.nested_sampling import NestedSampler
 
@@ -150,10 +155,15 @@ class sample:
     
     self.samp = self._sampler(**kwargs)
     
-    self.az   = arviz.from_numpyro(self.samp)
-    self.loo  = arviz.loo(self.az)
-    self.waic = arviz.waic(self.az)
-
+    if arviz is not None:
+      self.az   = arviz.from_numpyro(self.samp)
+      self.loo  = arviz.loo(self.az)
+      self.waic = arviz.waic(self.az)
+    else:
+      self.az   = None
+      self.loo  = None
+      self.waic = None
+      
     for var in ['xk','xs','ys']:
       self.samp._states['z'].pop(var,None)
 
