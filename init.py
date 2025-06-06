@@ -19,7 +19,7 @@ y = scattr.data(loc=yc,scale=ys,uselog=True,scatter=True)
 m = scattr.dist.Uniform(low= 0.00E+00,high=1.00E+02)
 c = scattr.dist.Uniform(low=-1.00E+01,high=1.00E+01)
 
-res = scattr.sample(x,y,m,c,nwarmup=5000,nsample=5000)
+res = scattr.sample(x=x,y=y,m=m,c=c,nwarmup=5000,nsample=5000)
 
 # --------------------------------------------------------------------------------
 
